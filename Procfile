@@ -1,1 +1,1 @@
-worker: python bot_farm.py
+worker: python botfarm.py
