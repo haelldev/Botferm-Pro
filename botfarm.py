@@ -1,73 +1,115 @@
-# bot_farm.py
+# botfarm.py
 import os
-import discord
-from discord.ext import commands
 import mysql.connector
+from discord.ext import commands
 
-# --- CONFIGURAÇÕES ---
-TOKEN = os.getenv("TOKEN")  # Token do bot no Discord
-PREFIX = "!"
-
+# -------------------------
 # Conexão com o banco de dados
-db = mysql.connector.connect(
+# -------------------------
+conn = mysql.connector.connect(
     host=os.getenv("DB_HOST"),
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
-    port=int(os.getenv("DB_PORT"))
+    port=3306
 )
-cursor = db.cursor()
+cursor = conn.cursor()
 
-# Criar tabela caso não exista
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS farm_data (
-    user_id BIGINT NOT NULL,
-    item VARCHAR(255) NOT NULL,
-    quantidade INT DEFAULT 0,
-    PRIMARY KEY(user_id, item)
-)
-""")
-db.commit()
+# -------------------------
+# Configuração do bot
+# -------------------------
+bot = commands.Bot(command_prefix="!")
 
-# Inicializando bot
-bot = commands.Bot(command_prefix=PREFIX, intents=discord.Intents.all())
-
-# --- FUNÇÕES ---
-def salvar_item(user_id, item, quantidade):
-    """Adiciona ou atualiza quantidade de itens do usuário"""
-    sql = """
-    INSERT INTO farm_data (user_id, item, quantidade)
-    VALUES (%s, %s, %s)
-    ON DUPLICATE KEY UPDATE quantidade = quantidade + %s
-    """
-    valores = (user_id, item, quantidade, quantidade)
-    cursor.execute(sql, valores)
-    db.commit()
-
-def pegar_itens(user_id):
-    """Retorna todos os itens do usuário"""
-    cursor.execute("SELECT item, quantidade FROM farm_data WHERE user_id = %s", (user_id,))
-    return cursor.fetchall()  # lista de tuplas (item, quantidade)
-
-# --- COMANDOS ---
-@bot.command()
-async def coletar(ctx, item: str, quantidade: int):
-    salvar_item(ctx.author.id, item, quantidade)
-    await ctx.send(f"{ctx.author.name} coletou {quantidade}x {item}!")
-
-@bot.command()
-async def inventario(ctx):
-    itens = pegar_itens(ctx.author.id)
-    if itens:
-        resposta = "\n".join([f"{item}: {qtd}" for item, qtd in itens])
-    else:
-        resposta = "Seu inventário está vazio!"
-    await ctx.send(f"**Inventário de {ctx.author.name}:**\n{resposta}")
-
-# --- EVENTOS ---
 @bot.event
 async def on_ready():
-    print(f"{bot.user} está online!")
+    print(f'Bot conectado como {bot.user}')
 
-# --- RODAR BOT ---
-bot.run(TOKEN)
+# -------------------------
+# Comandos do bot
+# -------------------------
+
+# Adicionar item
+@bot.command()
+async def add_item(ctx, item: str, quantity: int):
+    cursor.execute(
+        "INSERT INTO farm_data (user_id, item, quantity) VALUES (%s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE quantity = quantity + %s",
+        (ctx.author.id, item, quantity, quantity)
+    )
+    conn.commit()
+    await ctx.send(f"{quantity}x {item} adicionados ao seu inventário!")
+
+# Remover item
+@bot.command()
+async def remove_item(ctx, item: str, quantity: int):
+    cursor.execute(
+        "SELECT quantity FROM farm_data WHERE user_id=%s AND item=%s",
+        (ctx.author.id, item)
+    )
+    row = cursor.fetchone()
+    if not row:
+        await ctx.send("Você não tem esse item.")
+        return
+    new_quantity = row[0] - quantity
+    if new_quantity <= 0:
+        cursor.execute(
+            "DELETE FROM farm_data WHERE user_id=%s AND item=%s",
+            (ctx.author.id, item)
+        )
+    else:
+        cursor.execute(
+            "UPDATE farm_data SET quantity=%s WHERE user_id=%s AND item=%s",
+            (new_quantity, ctx.author.id, item)
+        )
+    conn.commit()
+    await ctx.send(f"{quantity}x {item} removidos do seu inventário!")
+
+# Listar itens
+@bot.command()
+async def list_items(ctx):
+    cursor.execute(
+        "SELECT item, quantity FROM farm_data WHERE user_id=%s",
+        (ctx.author.id,)
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        await ctx.send("Você não tem itens no inventário.")
+    else:
+        message = "Seus itens:\n"
+        for item, quantity in rows:
+            message += f"- {item}: {quantity}\n"
+        await ctx.send(message)
+
+# Editar quantidade de um item
+@bot.command()
+async def edit_item(ctx, item: str, quantity: int):
+    cursor.execute(
+        "SELECT quantity FROM farm_data WHERE user_id=%s AND item=%s",
+        (ctx.author.id, item)
+    )
+    row = cursor.fetchone()
+    if not row:
+        await ctx.send("Você não tem esse item.")
+        return
+    cursor.execute(
+        "UPDATE farm_data SET quantity=%s WHERE user_id=%s AND item=%s",
+        (quantity, ctx.author.id, item)
+    )
+    conn.commit()
+    await ctx.send(f"Quantidade de {item} alterada para {quantity}.")
+
+# Total de itens
+@bot.command()
+async def total_items(ctx):
+    cursor.execute(
+        "SELECT SUM(quantity) FROM farm_data WHERE user_id=%s",
+        (ctx.author.id,)
+    )
+    total = cursor.fetchone()[0]
+    total = total if total else 0
+    await ctx.send(f"Você tem um total de {total} itens no inventário.")
+
+# -------------------------
+# Rodando o bot
+# -------------------------
+bot.run(os.getenv("TOKEN"))
