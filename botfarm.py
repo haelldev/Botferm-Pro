@@ -11,7 +11,7 @@ conn = mysql.connector.connect(
     user=os.getenv("DB_USER"),
     password=os.getenv("DB_PASSWORD"),
     database=os.getenv("DB_NAME"),
-    port=3306
+    port=22938
 )
 cursor = conn.cursor()
 
