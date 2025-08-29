@@ -7,13 +7,19 @@ from discord.ext import commands
 # Conexão com o banco de dados
 # -------------------------
 
+host = os.getenv("MYSQLHOST")
+if not host:
+    raise ValueError("MYSQLHOST não configurado. Defina a variável de ambiente.")
+
 conexao = mysql.connector.connect(
-    host=os.getenv("MYSQLHOST"),
+    host=host,
     user=os.getenv("MYSQLUSER"),
     password=os.getenv("MYSQLPASSWORD"),
     database=os.getenv("MYSQL_DATABASE"),
     port=int(os.getenv("MYSQLPORT", 3306))
 )
+print("Conexão MySQL bem-sucedida!")
+
 
 cursor = conn.cursor()
 
