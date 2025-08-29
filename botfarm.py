@@ -6,7 +6,6 @@ from discord.ext import commands
 # -------------------------
 # Conexão com o banco de dados
 # -------------------------
-load_dotenv()
 
 conexao = mysql.connector.connect(
     host=os.getenv("MYSQLHOST"),
